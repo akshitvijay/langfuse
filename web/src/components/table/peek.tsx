@@ -9,7 +9,6 @@ import { Expand, ExternalLink } from "lucide-react";
 import { Separator } from "@/src/components/ui/separator";
 import { ItemBadge, type LangfuseItemType } from "@/src/components/ItemBadge";
 import { DetailPageNav } from "@/src/features/navigate-detail-pages/DetailPageNav";
-import { useRouter } from "next/router";
 
 type PeekViewItemType = Extract<LangfuseItemType, "TRACE">;
 
@@ -19,6 +18,7 @@ export type DataTablePeekViewProps<TData> = {
   onOpenChange: (open: boolean, row?: TData) => void;
   onExpand: (openInNewTab: boolean) => void;
   render: () => React.ReactNode;
+  urlPathname: string;
 };
 
 const mapItemTypeToPageUrl: Record<PeekViewItemType, string> = {
@@ -31,13 +31,31 @@ export function TablePeekView<TData>({
   onOpenChange,
   onExpand,
   render,
+  urlPathname,
 }: DataTablePeekViewProps<TData>) {
-  const router = useRouter();
   const pageUrl = mapItemTypeToPageUrl[itemType];
 
   return (
-    <Sheet open={!!selectedRowId} onOpenChange={onOpenChange} modal={false}>
+    <Sheet
+      open={!!selectedRowId}
+      onOpenChange={(open) => {
+        // Ignore close events from checkbox or bookmark star toggle clicks to ensure integrity of table row actions
+        if (
+          !open &&
+          (document.activeElement?.closest('[role="checkbox"]') ||
+            document.activeElement?.closest('[aria-label="bookmark"]'))
+        ) {
+          return;
+        }
+        onOpenChange(open);
+      }}
+      modal={false}
+    >
       <SheetContent
+        onPointerDownOutside={(e) => {
+          // Prevent the default behavior of closing when clicking outside when we set modal={false}
+          e.preventDefault();
+        }}
         side="right"
         className="flex max-h-full min-h-0 min-w-[60vw] flex-col gap-0 overflow-hidden rounded-l-xl p-0"
       >
@@ -56,11 +74,10 @@ export function TablePeekView<TData>({
               <DetailPageNav
                 currentId={selectedRowId}
                 path={(entry) => {
-                  const { projectId } = router.query;
                   const url = new URL(window.location.href);
 
                   // Update the path part
-                  url.pathname = `/project/${projectId as string}/${pageUrl}`;
+                  url.pathname = urlPathname;
 
                   // Keep all existing query params
                   const params = new URLSearchParams(url.search);
@@ -84,7 +101,7 @@ export function TablePeekView<TData>({
                 listKey={pageUrl}
               />
             )}
-            <div className="!mt-0 mr-6 flex h-full flex-row items-center border-l">
+            <div className="!mt-0 mr-8 flex h-full flex-row items-center gap-1 border-l">
               <Button
                 variant="ghost"
                 size="icon-xs"

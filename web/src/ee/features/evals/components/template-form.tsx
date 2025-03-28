@@ -434,7 +434,7 @@ export const InnerEvalTemplateForm = (props: {
                     <CodeMirrorEditor
                       value={field.value}
                       onChange={field.onChange}
-                      editable
+                      editable={props.isEditing}
                       mode="prompt"
                       minHeight={200}
                     />
