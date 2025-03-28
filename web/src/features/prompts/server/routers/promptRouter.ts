@@ -10,7 +10,7 @@ import {
   createTRPCRouter,
   protectedProjectProcedure,
 } from "@/src/server/api/trpc";
-import { type Prompt, Prisma, prisma } from "@langfuse/shared/src/db";
+import { type Prompt, Prisma } from "@langfuse/shared/src/db";
 import { createPrompt, duplicatePrompt } from "../actions/createPrompt";
 import { promptsTableCols } from "@/src/server/api/definitions/promptsTable";
 import { optionalPaginationZod, paginationZod } from "@langfuse/shared";
@@ -119,6 +119,30 @@ export const promptRouter = createTRPCRouter({
         prompts: prompts,
         totalCount:
           promptCount.length > 0 ? Number(promptCount[0]?.totalCount) : 0,
+      };
+    }),
+  count: protectedProjectProcedure
+    .input(z.object({ projectId: z.string() }))
+    .query(async ({ input, ctx }) => {
+      throwIfNoProjectAccess({
+        session: ctx.session,
+        projectId: input.projectId,
+        scope: "prompts:read",
+      });
+
+      const count = await ctx.prisma.$queryRaw<Array<{ totalCount: bigint }>>(
+        generatePromptQuery(
+          Prisma.sql` count(*) AS "totalCount"`,
+          input.projectId,
+          Prisma.empty,
+          Prisma.empty,
+          1, // limit
+          0, // page
+        ),
+      );
+
+      return {
+        totalCount: count[0].totalCount,
       };
     }),
   metrics: protectedProjectProcedure
@@ -923,25 +947,32 @@ export const promptRouter = createTRPCRouter({
       }),
     )
     .query(async ({ input, ctx }) => {
-      const { promptId, projectId } = input;
+      try {
+        const { promptId, projectId } = input;
 
-      throwIfNoProjectAccess({
-        session: ctx.session,
-        projectId,
-        scope: "prompts:read",
-      });
-
-      const prompt = await ctx.prisma.prompt.findUniqueOrThrow({
-        where: {
-          id: promptId,
+        throwIfNoProjectAccess({
+          session: ctx.session,
           projectId,
-        },
-      });
+          scope: "prompts:read",
+        });
 
-      return new PromptService(prisma, redis).buildAndResolvePromptGraph({
-        projectId: input.projectId,
-        parentPrompt: prompt,
-      });
+        const prompt = await ctx.prisma.prompt.findUniqueOrThrow({
+          where: {
+            id: promptId,
+            projectId,
+          },
+        });
+
+        const promptService = new PromptService(ctx.prisma, redis);
+
+        return promptService.buildAndResolvePromptGraph({
+          projectId: input.projectId,
+          parentPrompt: prompt,
+        });
+      } catch (e) {
+        logger.error(e);
+        throw e;
+      }
     }),
 });
 
